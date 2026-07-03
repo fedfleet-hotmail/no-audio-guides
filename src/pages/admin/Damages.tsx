@@ -123,22 +123,6 @@ export default function AdminDamages() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const approve = useMutation({
-    mutationFn: async ({ id, approve: approved, reason }: { id: string; approve: boolean; reason?: string }) => {
-      const update = approved
-        ? { approved: true, approved_at: new Date().toISOString(), status: "open" }
-        : { approved: true, approved_at: new Date().toISOString(), status: "closed", rejection_reason: reason || "Rejected by admin" };
-      const { error } = await supabase.from("damage_markers").update(update).eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Updated");
-      setSelectedIds(new Set());
-      qc.invalidateQueries({ queryKey: ["admin-damages"] });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   const bulkApprove = useMutation({
     mutationFn: async (ids: string[]) => {
       const { error } = await supabase
@@ -367,19 +351,9 @@ export default function AdminDamages() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => setSelected(d.id)}>
-                            <Eye className="mr-1 h-4 w-4" /> Review
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="default"
-                            className="bg-green-600 hover:bg-green-700"
-                            onClick={() => approve.mutate({ id: d.id, approve: true })}
-                          >
-                            <CheckCircle2 className="mr-1 h-4 w-4" /> Approve
-                          </Button>
-                        </div>
+                        <Button size="sm" variant="ghost" onClick={() => setSelected(d.id)}>
+                          <Eye className="mr-1 h-4 w-4" /> Review
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
