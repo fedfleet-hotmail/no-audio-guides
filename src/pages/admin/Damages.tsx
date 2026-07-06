@@ -5,8 +5,6 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -28,7 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/lib/supabase";
 import { getSignedUrl, getPublicUrl } from "@/lib/storage";
 import { toast } from "sonner";
-import { TriangleAlert as AlertTriangle, CircleCheck as CheckCircle2, Circle as XCircle, Clock, Eye, SquareCheck as CheckSquare, MapPin, Car, User, Calendar, MessageSquare, Search, X } from "lucide-react";
+import { TriangleAlert as AlertTriangle, CircleCheck as CheckCircle2, Clock, Eye, SquareCheck as CheckSquare, MapPin, Car, User, Calendar, MessageSquare, Search, X, Trash2 } from "lucide-react";
 import { VehicleBlueprint, type BlueprintMarker, type BlueprintView } from "@/components/VehicleBlueprint";
 
 const STATUSES = ["open", "in_review", "repaired"];
@@ -481,7 +479,7 @@ function AllDamagesTable({
 
 function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () => void }) {
   const qc = useQueryClient();
-  const [rejectionReason, setRejectionReason] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const { data: damage, isLoading } = useQuery({
     queryKey: ["damage-detail", id],
@@ -525,22 +523,50 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
     },
   });
 
-  const approve = useMutation({
-    mutationFn: async (approveFlag: boolean) => {
-      const update = approveFlag
-        ? { approved: true, approved_at: new Date().toISOString(), status: "open" }
-        : { approved: true, approved_at: new Date().toISOString(), status: "closed", rejection_reason: rejectionReason || "Rejected by admin" };
-      const { error } = await supabase.from("damage_markers").update(update).eq("id", id!);
+  async function approveMarker() {
+    setBusy(true);
+    try {
+      const { error } = await supabase
+        .from("damage_markers")
+        .update({ approved: true, approved_at: new Date().toISOString(), status: "open" })
+        .eq("id", id!);
       if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Updated");
+      await supabase
+        .from("damage_marker_photos")
+        .update({ approved: true, approved_at: new Date().toISOString() })
+        .eq("damage_marker_id", id!);
+      toast.success("Marker approved — visible to drivers");
       qc.invalidateQueries({ queryKey: ["admin-damages"] });
-      qc.invalidateQueries({ queryKey: ["damage-detail", id] });
+      qc.invalidateQueries({ queryKey: ["damage-photos", id] });
       onClose();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function togglePhoto(photoId: string, next: boolean) {
+    setBusy(true);
+    try {
+      const { error } = await supabase
+        .from("damage_marker_photos")
+        .update({ approved: next, approved_at: next ? new Date().toISOString() : null })
+        .eq("id", photoId);
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["damage-photos", id] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deletePhoto(photoId: string) {
+    const { error } = await supabase.from("damage_marker_photos").delete().eq("id", photoId);
+    if (error) toast.error(error.message);
+    else qc.invalidateQueries({ queryKey: ["damage-photos", id] });
+  }
 
   const blueprintImages: Partial<Record<BlueprintView, string>> = {};
   for (const b of blueprints || []) {
@@ -644,58 +670,73 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
               </div>
             </div>
 
-            {/* Photos */}
-            <div>
-              <p className="mb-2 text-sm font-medium">Photos ({photos?.length || 0})</p>
-              {photos && photos.length > 0 ? (
-                <div className="grid grid-cols-2 gap-2">
-                  {photos.map((p) => (
-                    <SignedImg key={p.id} bucket="damage-photos" path={p.photo_url} />
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No photos uploaded</p>
-              )}
-            </div>
+            {/* Driver photos with per-photo approval */}
+            {damage.source === "driver" && (
+              <div>
+                <p className="mb-2 text-sm font-medium">
+                  Driver photos ({photos?.length || 0})
+                </p>
+                {!photos || photos.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No photos uploaded by the driver.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {photos.map((p) => (
+                      <div
+                        key={p.id}
+                        className={`relative overflow-hidden rounded-md border-2 ${
+                          p.approved ? "border-emerald-500" : "border-amber-500"
+                        }`}
+                      >
+                        <SignedImg bucket="damage-photos" path={p.photo_url} />
+                        <div className="flex items-center justify-between gap-1 p-1 text-xs">
+                          <Button
+                            size="sm"
+                            variant={p.approved ? "secondary" : "default"}
+                            className="h-7 flex-1 px-2 text-xs"
+                            disabled={busy}
+                            onClick={() => togglePhoto(p.id, !p.approved)}
+                          >
+                            {p.approved ? "Unapprove" : "Approve"}
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            disabled={busy}
+                            onClick={() => deletePhoto(p.id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!damage.approved && (
+                  <Button
+                    className="mt-2 w-full"
+                    onClick={approveMarker}
+                    disabled={busy}
+                  >
+                    Approve marker &amp; all photos
+                  </Button>
+                )}
+              </div>
+            )}
 
-            {/* Approval Actions */}
-            {damage.source === "driver" && !damage.approved && (
-              <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
-                <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                  Review Required
-                </p>
-                <p className="text-xs text-amber-700 dark:text-amber-300">
-                  Approve to make this damage visible in fleet reports, or reject if it doesn&apos;t meet documentation standards.
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="default"
-                    className="flex-1 bg-green-600 hover:bg-green-700"
-                    onClick={() => approve.mutate(true)}
-                  >
-                    <CheckCircle2 className="mr-2 h-4 w-4" /> Approve
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    className="flex-1"
-                    onClick={() => {
-                      if (rejectionReason.trim() || confirm("Reject without reason?")) {
-                        approve.mutate(false);
-                      }
-                    }}
-                  >
-                    <XCircle className="mr-2 h-4 w-4" /> Reject
-                  </Button>
-                </div>
-                <div>
-                  <Label className="text-xs">Rejection reason (optional)</Label>
-                  <Textarea
-                    rows={2}
-                    placeholder="e.g., Photos unclear, damage appears pre-existing..."
-                    value={rejectionReason}
-                    onChange={(e) => setRejectionReason(e.target.value)}
-                  />
-                </div>
+            {/* Baseline photos — read-only */}
+            {damage.source === "baseline" && (
+              <div>
+                <p className="mb-2 text-sm font-medium">Photos ({photos?.length || 0})</p>
+                {photos && photos.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {photos.map((p) => (
+                      <SignedImg key={p.id} bucket="damage-photos" path={p.photo_url} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No photos uploaded</p>
+                )}
               </div>
             )}
 
