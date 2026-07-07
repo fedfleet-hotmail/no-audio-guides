@@ -152,7 +152,7 @@ const reports = [
       const { data, error } = await supabase
         .from("damage_markers")
         .select("damage_type, vehicle:vehicles(registration_number, make, model)")
-        .eq("status", "open");
+        .eq("status", "approved");
       if (error) throw error;
       const map: Record<string, Record<string, unknown>> = {};
       for (const d of data || []) {

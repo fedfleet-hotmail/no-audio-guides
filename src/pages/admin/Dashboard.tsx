@@ -27,7 +27,7 @@ async function fetchStats() {
       supabase.from("vehicles").select("id", { count: "exact", head: true }).eq("status", "assigned"),
       supabase.from("vehicle_sessions").select("driver_id", { count: "exact", head: true }).eq("status", "active"),
       supabase.from("damage_markers").select("id", { count: "exact", head: true }),
-      supabase.from("damage_markers").select("id", { count: "exact", head: true }).eq("status", "open"),
+      supabase.from("damage_markers").select("id", { count: "exact", head: true }).eq("status", "approved"),
       supabase.from("vehicle_sessions").select("id", { count: "exact", head: true }),
       supabase.from("vehicle_sessions").select("id", { count: "exact", head: true }).eq("status", "active"),
       supabase.from("inspections").select("id", { count: "exact", head: true }),

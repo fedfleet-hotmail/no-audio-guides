@@ -62,7 +62,6 @@ interface MarkerRow {
   source: "baseline" | "driver";
   damage_type: string;
   description: string | null;
-  approved: boolean;
 }
 
 type FuelLevelValue = "empty" | "half" | "full";
@@ -150,9 +149,9 @@ export default function DriverReturnInspection() {
       const [m, p, links, bp, dp] = await Promise.all([
         supabase
           .from("damage_markers")
-          .select("id, x_coordinate, y_coordinate, view, status, source, damage_type, description, approved")
+          .select("id, x_coordinate, y_coordinate, view, status, source, damage_type, description")
           .eq("vehicle_id", vehicleId)
-          .in("status", ["open", "in_review"]),
+          .in("status", ["approved"]),
         supabase.from("vehicle_base_photos").select("id, photo_url, view, label").eq("vehicle_id", vehicleId),
         supabase.from("damage_marker_base_photos").select("damage_marker_id, base_photo_id"),
         supabase.from("vehicle_blueprints").select("view, blueprint_image").eq("vehicle_id", vehicleId),
@@ -185,7 +184,7 @@ export default function DriverReturnInspection() {
       y: Number(m.y_coordinate),
       view: m.view,
       source: m.source,
-      color: m.source === "baseline" ? "hsl(220 80% 55%)" : m.status === "repaired" ? "hsl(142 71% 45%)" : "hsl(0 80% 50%)",
+      color: m.source === "baseline" ? "hsl(220 80% 55%)" : "hsl(0 80% 50%)",
     })) ?? [];
 
   const linkedPhotosFor = (markerId: string) => {
@@ -580,7 +579,7 @@ export default function DriverReturnInspection() {
               </SheetHeader>
               <div className="space-y-4 py-4">
                 {openMarker.description && <p className="text-sm">{openMarker.description}</p>}
-                {openMarker.source === "driver" && !openMarker.approved && (
+                {openMarker.source === "driver" && openMarker.status !== "approved" && (
                   <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
                     Awaiting admin approval. Photos visible once reviewed.
                   </div>
@@ -604,7 +603,7 @@ export default function DriverReturnInspection() {
                     );
                   }
                   const photos = (vehicleData?.damagePhotos ?? []).filter((p) => p.damage_marker_id === openMarker.id);
-                  if (!openMarker.approved) return null;
+                  if (openMarker.status !== "approved") return null;
                   return photos.length ? (
                     <div>
                       <p className="mb-2 text-sm font-medium">Damage photos</p>

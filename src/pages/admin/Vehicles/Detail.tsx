@@ -192,10 +192,10 @@ export default function AdminVehicleDetail() {
       const { data, error } = await supabase
         .from("damage_markers")
         .select(
-          "id, reported_at, damage_type, description, status, view, source, approved, reported_during, driver:drivers(name, surname)",
+          "id, reported_at, damage_type, description, status, view, source, reported_during, driver:drivers(name, surname)",
         )
         .eq("vehicle_id", vehicleId)
-        .in("status", ["open", "in_review"])
+        .in("status", ["pending_approval", "approved"])
         .order("reported_at", { ascending: false })
         .limit(20);
       if (error) throw error;
@@ -213,7 +213,7 @@ export default function AdminVehicleDetail() {
           "id, reported_at, damage_type, description, status, view, source, reported_during, rejection_reason, driver_id, session_id, driver:drivers(name, surname)",
         )
         .eq("vehicle_id", vehicleId)
-        .in("status", ["repaired", "closed"])
+        .in("status", ["rejected"])
         .order("reported_at", { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -388,7 +388,7 @@ export default function AdminVehicleDetail() {
           icon={<AlertTriangle className="h-5 w-5 text-destructive" />}
           label="Open Damages"
           value={String(summary.open_damage_count ?? 0)}
-          sub={`${(damageHistory || []).filter((d: any) => d.status === "repaired").length} repaired · ${summary.total_damage_count ?? 0} total`}
+          sub={`${(damageHistory || []).filter((d: any) => d.status === "rejected").length} rejected · ${summary.total_damage_count ?? 0} total`}
           highlight={(summary.open_damage_count ?? 0) > 0}
         />
         <StatCard
@@ -694,7 +694,7 @@ export default function AdminVehicleDetail() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <DamageStatusBadge status={d.status} approved={d.approved} source={d.source} />
+                    <DamageStatusBadge status={d.status} source={d.source} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -727,7 +727,7 @@ export default function AdminVehicleDetail() {
             </TableHeader>
             <TableBody>
               {(damageHistory || []).map((d: any) => (
-                <TableRow key={d.id} className={d.status === "closed" ? "opacity-60" : ""}>
+                <TableRow key={d.id} className={d.status === "rejected" ? "opacity-60" : ""}>
                   <TableCell>
                     <Badge variant="outline" className="capitalize text-xs">
                       {d.damage_type.replace("_", " ")}
@@ -751,7 +751,7 @@ export default function AdminVehicleDetail() {
                   </TableCell>
                   <TableCell className="max-w-48 text-sm">
                     <span className="line-clamp-2">{d.description || "—"}</span>
-                    {d.status === "closed" && d.rejection_reason && (
+                    {d.status === "rejected" && d.rejection_reason && (
                       <span className="mt-0.5 block text-xs italic text-muted-foreground">
                         Rejected: {d.rejection_reason}
                       </span>
@@ -771,24 +771,9 @@ export default function AdminVehicleDetail() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {d.status === "repaired" ? (
-                      d.session_id ? (
-                        <Link
-                          to={`/admin/sessions/${d.session_id}`}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-green-700 hover:underline dark:text-green-400"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Repaired
-                        </Link>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Repaired
-                        </span>
-                      )
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                        <XCircle className="h-3.5 w-3.5" /> Rejected
-                      </span>
-                    )}
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                      <XCircle className="h-3.5 w-3.5" /> Rejected
+                    </span>
                   </TableCell>
                 </TableRow>
               ))}
@@ -904,28 +889,27 @@ function StatCard({
 
 function DamageStatusBadge({
   status,
-  approved,
   source,
 }: {
   status: string;
-  approved: boolean;
   source: string;
 }) {
-  if (source === "driver" && !approved) {
-    return (
-      <Badge variant="outline" className="border-amber-400 text-xs text-amber-700">
-        Pending review
-      </Badge>
-    );
-  }
   const map: Record<string, string> = {
-    open: "destructive",
-    in_review: "secondary",
-    repaired: "default",
+    pending_approval: "outline",
+    approved: "default",
+    rejected: "destructive",
   };
+  const label =
+    status === "pending_approval"
+      ? "Pending Approval"
+      : status === "approved"
+        ? "Approved"
+        : status === "rejected"
+          ? "Rejected"
+          : status.replace("_", " ");
   return (
-    <Badge variant={(map[status] as any) ?? "outline"} className="capitalize text-xs">
-      {status.replace("_", " ")}
+    <Badge variant={(map[status] as any) ?? "outline"} className="text-xs">
+      {label}
     </Badge>
   );
 }

@@ -81,7 +81,7 @@ export default function AdminSessionReport() {
       const { data, error } = await supabase
         .from("damage_markers")
         .select(
-          "id, damage_type, view, description, status, approved, reported_during, photos:damage_marker_photos(photo_url)",
+          "id, damage_type, view, description, status, reported_during, photos:damage_marker_photos(photo_url)",
         )
         .eq("session_id", sessionId)
         .order("reported_during", { ascending: true });
@@ -397,18 +397,19 @@ function DamageRow({ damage }: { damage: any }) {
           {damage.damage_type.replace("_", " ")}
         </Badge>
         <span className="text-xs capitalize text-muted-foreground">{damage.view}</span>
-        {damage.approved ? (
+        {damage.status === "approved" ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300">
             Approved
+          </span>
+        ) : damage.status === "rejected" ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300">
+            Rejected
           </span>
         ) : (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
             Pending review
           </span>
         )}
-        <Badge variant="outline" className="capitalize text-xs">
-          {damage.status}
-        </Badge>
       </div>
       {damage.description && (
         <p className="mt-1 text-xs text-muted-foreground">{damage.description}</p>

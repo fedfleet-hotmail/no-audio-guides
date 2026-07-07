@@ -31,7 +31,15 @@ import { toast } from "sonner";
 import { TriangleAlert as AlertTriangle, CircleCheck as CheckCircle2, Circle as XCircle, Clock, Eye, SquareCheck as CheckSquare, MapPin, Car, User, Calendar, MessageSquare, Search, X, Trash2 } from "lucide-react";
 import { VehicleBlueprint, type BlueprintMarker, type BlueprintView } from "@/components/VehicleBlueprint";
 
-const STATUSES = ["open", "in_review", "repaired"];
+const APPROVAL_STATUSES = ["pending_approval", "approved", "rejected"] as const;
+const STATUS_LABELS: Record<string, string> = {
+  pending_approval: "Pending Approval",
+  approved: "Approved",
+  rejected: "Rejected",
+};
+function statusLabel(s: string) {
+  return STATUS_LABELS[s] ?? s.replace("_", " ");
+}
 
 interface DamageMarker {
   id: string;
@@ -45,7 +53,6 @@ interface DamageMarker {
   source: "baseline" | "driver";
   reported_during: "pre_trip" | "return" | null;
   session_id: string | null;
-  approved: boolean;
   approved_at: string | null;
   rejection_reason: string | null;
   vehicle_id: string;
@@ -70,7 +77,7 @@ export default function AdminDamages() {
       let q = supabase
         .from("damage_markers")
         .select(
-          "id, reported_at, damage_type, description, status, view, x_coordinate, y_coordinate, source, reported_during, session_id, approved, approved_at, rejection_reason, vehicle_id, driver_id, vehicle:vehicles(registration_number, make, model), driver:drivers(name, surname, employee_number)"
+          "id, reported_at, damage_type, description, status, view, x_coordinate, y_coordinate, source, reported_during, session_id, approved_at, rejection_reason, vehicle_id, driver_id, vehicle:vehicles(registration_number, make, model), driver:drivers(name, surname, employee_number)"
         )
         .order("reported_at", { ascending: false })
         .limit(500);
@@ -97,7 +104,7 @@ export default function AdminDamages() {
     );
   };
 
-  const pendingDamages = applySearch((data || []).filter((d) => d.source === "driver" && !d.approved));
+  const pendingDamages = applySearch((data || []).filter((d) => d.source === "driver" && d.status === "pending_approval"));
   const preTripDamages = applySearch((data || []).filter((d) => d.reported_during === "pre_trip"));
   const returnDamages = applySearch((data || []).filter((d) => d.reported_during === "return"));
   const allDamages = applySearch(data || []);
@@ -127,7 +134,7 @@ export default function AdminDamages() {
     mutationFn: async (ids: string[]) => {
       const { error } = await supabase
         .from("damage_markers")
-        .update({ approved: true, approved_at: new Date().toISOString(), status: "open" })
+        .update({ status: "approved", approved_at: new Date().toISOString() })
         .in("id", ids);
       if (error) throw error;
     },
@@ -166,9 +173,9 @@ export default function AdminDamages() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
-            {STATUSES.map((s) => (
-              <SelectItem key={s} value={s} className="capitalize">
-                {s.replace("_", " ")}
+            {APPROVAL_STATUSES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {statusLabel(s)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -440,8 +447,8 @@ function AllDamagesTable({
                 <ReportedDuringBadge value={d.reported_during} source={d.source} />
               </TableCell>
               <TableCell>
-                <Badge variant={d.source === "baseline" ? "secondary" : d.approved ? "default" : "outline"}>
-                  {d.source === "baseline" ? "Baseline" : d.approved ? "Driver (Approved)" : "Driver (Pending)"}
+                <Badge variant={d.source === "baseline" ? "secondary" : d.status === "approved" ? "default" : "outline"}>
+                  {d.source === "baseline" ? "Baseline" : d.status === "approved" ? "Driver (Approved)" : d.status === "rejected" ? "Driver (Rejected)" : "Driver (Pending)"}
                 </Badge>
               </TableCell>
               <TableCell>
@@ -450,14 +457,14 @@ function AllDamagesTable({
               <TableCell>
                 <Select value={d.status} onValueChange={(v) => onStatusChange(d.id, v)}>
                   <SelectTrigger className="h-7 w-32 text-xs">
-                    <Badge variant="outline" className="capitalize">
-                      {d.status.replace("_", " ")}
+                    <Badge variant="outline">
+                      {statusLabel(d.status)}
                     </Badge>
                   </SelectTrigger>
                   <SelectContent>
-                    {STATUSES.map((s) => (
-                      <SelectItem key={s} value={s} className="capitalize">
-                        {s.replace("_", " ")}
+                    {APPROVAL_STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {statusLabel(s)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -491,7 +498,7 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
       const { data, error } = await supabase
         .from("damage_markers")
         .select(
-          "id, reported_at, damage_type, description, status, view, x_coordinate, y_coordinate, source, approved, approved_at, rejection_reason, vehicle_id, driver_id, vehicle:vehicles(id, registration_number, make, model), driver:drivers(name, surname, employee_number)"
+          "id, reported_at, damage_type, description, status, view, x_coordinate, y_coordinate, source, approved_at, rejection_reason, vehicle_id, driver_id, vehicle:vehicles(id, registration_number, make, model), driver:drivers(name, surname, employee_number)"
         )
         .eq("id", id)
         .single();
@@ -531,7 +538,7 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
     try {
       const { error } = await supabase
         .from("damage_markers")
-        .update({ approved: true, approved_at: new Date().toISOString(), status: "open" })
+        .update({ status: "approved", approved_at: new Date().toISOString() })
         .eq("id", id!);
       if (error) throw error;
       await supabase
@@ -575,8 +582,8 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
     setBusy(true);
     try {
       const update = approveFlag
-        ? { approved: true, approved_at: new Date().toISOString(), status: "open" }
-        : { approved: true, approved_at: new Date().toISOString(), status: "closed", rejection_reason: rejectionReason || "Rejected by admin" };
+        ? { status: "approved", approved_at: new Date().toISOString() }
+        : { status: "rejected", rejection_reason: rejectionReason || "Rejected by admin" };
       const { error } = await supabase.from("damage_markers").update(update).eq("id", id!);
       if (error) throw error;
       toast.success("Updated");
@@ -612,7 +619,7 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             {damage?.source === "baseline" ? "Baseline Damage" : "Driver-Reported Damage"}
-            {damage && !damage.approved && (
+            {damage && damage.status === "pending_approval" && (
               <Badge variant="outline" className="border-amber-500 text-amber-600">
                 Pending Approval
               </Badge>
@@ -734,7 +741,7 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
                     ))}
                   </div>
                 )}
-                {!damage.approved && (
+                {damage.status !== "approved" && (
                   <Button
                     className="mt-2 w-full"
                     onClick={approveMarker}
@@ -745,7 +752,7 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
                 )}
 
                 {/* Approval Actions */}
-                {damage.source === "driver" && !damage.approved && (
+                {damage.source === "driver" && damage.status !== "approved" && (
                   <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
                     <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
                       Review Required
@@ -806,7 +813,7 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
             )}
 
             {/* Status if approved */}
-            {damage.approved && (
+            {damage.status === "approved" && (
               <div className="flex items-center gap-2 rounded-lg border border-green-500/40 bg-green-500/5 p-3">
                 <CheckCircle2 className="h-5 w-5 text-green-600" />
                 <div>
@@ -817,6 +824,18 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
                     </p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Status if rejected */}
+            {damage.status === "rejected" && (
+              <div className="rounded-lg border border-red-500/40 bg-red-500/5 p-3">
+                <p className="text-sm font-medium text-red-900 dark:text-red-100">Rejected</p>
+                {damage.rejection_reason && (
+                  <p className="mt-1 text-xs text-red-700 dark:text-red-300">
+                    {damage.rejection_reason}
+                  </p>
+                )}
               </div>
             )}
           </div>

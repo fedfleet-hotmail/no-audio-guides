@@ -40,7 +40,6 @@ interface MarkerRow {
   source: "baseline" | "driver";
   damage_type: string;
   description: string | null;
-  approved: boolean;
   reported_during: string | null;
 }
 
@@ -72,10 +71,10 @@ export default function DriverStartBlueprint() {
         supabase
           .from("damage_markers")
           .select(
-            "id, x_coordinate, y_coordinate, view, status, source, damage_type, description, approved, reported_during",
+            "id, x_coordinate, y_coordinate, view, status, source, damage_type, description, reported_during",
           )
           .eq("vehicle_id", vehicleId)
-          .in("status", ["open", "in_review"]),
+          .in("status", ["approved"]),
         supabase
           .from("vehicle_base_photos")
           .select("id, photo_url, view, label")
@@ -122,9 +121,7 @@ export default function DriverStartBlueprint() {
       color:
         m.source === "baseline"
           ? "hsl(220 80% 55%)"
-          : m.status === "repaired"
-            ? "hsl(142 71% 45%)"
-            : "hsl(0 80% 50%)",
+          : "hsl(0 80% 50%)",
     })) ?? [];
 
   const linkedPhotosFor = (markerId: string) => {
@@ -219,7 +216,7 @@ export default function DriverStartBlueprint() {
                 {openMarker.description && (
                   <p className="text-sm">{openMarker.description}</p>
                 )}
-                {openMarker.source === "driver" && !openMarker.approved && (
+                {openMarker.source === "driver" && openMarker.status !== "approved" && (
                   <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
                     This report is awaiting admin approval. Photos will be visible
                     once it has been reviewed.
@@ -258,7 +255,7 @@ export default function DriverStartBlueprint() {
                   const photos = (data?.damagePhotos ?? []).filter(
                     (p) => p.damage_marker_id === openMarker.id,
                   );
-                  if (!openMarker.approved) return null;
+                  if (openMarker.status !== "approved") return null;
                   return photos.length ? (
                     <div>
                       <p className="mb-2 text-sm font-medium">Damage photos</p>

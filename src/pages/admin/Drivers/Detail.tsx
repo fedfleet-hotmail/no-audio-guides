@@ -498,10 +498,10 @@ export default function AdminDriverDetail() {
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant={d.status === "open" ? "destructive" : "secondary"}
-                      className="capitalize text-xs"
+                      variant={d.status === "approved" ? "default" : d.status === "rejected" ? "destructive" : "secondary"}
+                      className="text-xs"
                     >
-                      {d.status.replace("_", " ")}
+                      {d.status === "pending_approval" ? "Pending Approval" : d.status === "approved" ? "Approved" : d.status === "rejected" ? "Rejected" : d.status.replace("_", " ")}
                     </Badge>
                   </TableCell>
                 </TableRow>

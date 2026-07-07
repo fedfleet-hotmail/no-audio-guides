@@ -50,7 +50,6 @@ interface MarkerRow {
   damage_type: string;
   description: string | null;
   source: "baseline" | "driver";
-  approved: boolean;
   driver_id: string | null;
   reported_at: string;
 }
@@ -83,7 +82,7 @@ export default function AdminVehicleBlueprint() {
         supabase
           .from("damage_markers")
           .select(
-            "id, x_coordinate, y_coordinate, view, status, damage_type, description, source, approved, driver_id, reported_at",
+            "id, x_coordinate, y_coordinate, view, status, damage_type, description, source, driver_id, reported_at",
           )
           .eq("vehicle_id", vehicleId),
         supabase
@@ -134,11 +133,11 @@ export default function AdminVehicleBlueprint() {
       color:
         m.source === "baseline"
           ? "hsl(220 80% 55%)"
-          : m.status === "repaired"
+          : m.status === "approved"
             ? "hsl(142 71% 45%)"
-            : m.status === "in_review"
-              ? "hsl(45 90% 50%)"
-              : "hsl(0 80% 50%)",
+            : m.status === "rejected"
+              ? "hsl(0 30% 50%)"
+              : "hsl(45 90% 50%)",
     })) ?? [];
 
   /* -------- base photo upload -------- */
@@ -266,9 +265,9 @@ export default function AdminVehicleBlueprint() {
             />
             <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
               <Legend color="hsl(220 80% 55%)" label="Baseline (B)" />
-              <Legend color="hsl(0 80% 50%)" label="Open" />
-              <Legend color="hsl(45 90% 50%)" label="In review" />
-              <Legend color="hsl(142 71% 45%)" label="Repaired" />
+              <Legend color="hsl(45 90% 50%)" label="Pending Approval" />
+              <Legend color="hsl(142 71% 45%)" label="Approved" />
+              <Legend color="hsl(0 30% 50%)" label="Rejected" />
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               Tap empty area to add a baseline marker. Tap a marker to edit or link base photos.
@@ -712,7 +711,7 @@ function ExistingMarkerSheet({
     try {
       const { error } = await supabase
         .from("damage_markers")
-        .update({ approved: true, approved_at: new Date().toISOString() })
+        .update({ status: "approved", approved_at: new Date().toISOString() })
         .eq("id", marker!.id);
       if (error) throw error;
       // Approve all photos that have not been explicitly rejected (i.e. still pending)
@@ -779,8 +778,8 @@ function ExistingMarkerSheet({
             )}
             <p>
               Approval:{" "}
-              <Badge variant={marker.approved ? "default" : "secondary"}>
-                {marker.approved ? "Approved" : "Pending"}
+              <Badge variant={marker.status === "approved" ? "default" : marker.status === "rejected" ? "destructive" : "secondary"}>
+                {marker.status === "approved" ? "Approved" : marker.status === "rejected" ? "Rejected" : "Pending"}
               </Badge>
             </p>
           </div>
@@ -830,7 +829,7 @@ function ExistingMarkerSheet({
                   ))}
                 </div>
               )}
-              {!marker.approved && (
+              {marker.status !== "approved" && (
                 <Button
                   className="mt-2 w-full"
                   onClick={approveMarker}
@@ -843,15 +842,15 @@ function ExistingMarkerSheet({
           )}
 
           <div>
-            <Label className="text-xs">Status</Label>
+            <Label className="text-xs">Approval Status</Label>
             <Select value={marker.status} onValueChange={setStatus}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="open">Open</SelectItem>
-                <SelectItem value="in_review">In review</SelectItem>
-                <SelectItem value="repaired">Repaired</SelectItem>
+                <SelectItem value="pending_approval">Pending Approval</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
               </SelectContent>
             </Select>
           </div>
