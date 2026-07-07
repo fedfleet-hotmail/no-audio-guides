@@ -5,6 +5,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -26,7 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/lib/supabase";
 import { getSignedUrl, getPublicUrl } from "@/lib/storage";
 import { toast } from "sonner";
-import { TriangleAlert as AlertTriangle, CircleCheck as CheckCircle2, Clock, Eye, SquareCheck as CheckSquare, MapPin, Car, User, Calendar, MessageSquare, Search, X, Trash2 } from "lucide-react";
+import { TriangleAlert as AlertTriangle, CircleCheck as CheckCircle2, Circle as XCircle, Clock, Eye, SquareCheck as CheckSquare, MapPin, Car, User, Calendar, MessageSquare, Search, X, Trash2 } from "lucide-react";
 import { VehicleBlueprint, type BlueprintMarker, type BlueprintView } from "@/components/VehicleBlueprint";
 
 const STATUSES = ["open", "in_review", "repaired"];
@@ -480,6 +482,7 @@ function AllDamagesTable({
 function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () => void }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
 
   const { data: damage, isLoading } = useQuery({
     queryKey: ["damage-detail", id],
@@ -566,6 +569,25 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
     const { error } = await supabase.from("damage_marker_photos").delete().eq("id", photoId);
     if (error) toast.error(error.message);
     else qc.invalidateQueries({ queryKey: ["damage-photos", id] });
+  }
+
+  async function approveReject(approveFlag: boolean) {
+    setBusy(true);
+    try {
+      const update = approveFlag
+        ? { approved: true, approved_at: new Date().toISOString(), status: "open" }
+        : { approved: true, approved_at: new Date().toISOString(), status: "closed", rejection_reason: rejectionReason || "Rejected by admin" };
+      const { error } = await supabase.from("damage_markers").update(update).eq("id", id!);
+      if (error) throw error;
+      toast.success("Updated");
+      qc.invalidateQueries({ queryKey: ["admin-damages"] });
+      qc.invalidateQueries({ queryKey: ["damage-detail", id] });
+      onClose();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   const blueprintImages: Partial<Record<BlueprintView, string>> = {};
@@ -720,6 +742,49 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
                   >
                     Approve marker &amp; all photos
                   </Button>
+                )}
+
+                {/* Approval Actions */}
+                {damage.source === "driver" && !damage.approved && (
+                  <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+                    <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                      Review Required
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      Approve to make this damage visible in fleet reports, or reject if it doesn&apos;t meet documentation standards.
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="default"
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                        disabled={busy}
+                        onClick={() => approveReject(true)}
+                      >
+                        <CheckCircle2 className="mr-2 h-4 w-4" /> Approve
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        className="flex-1"
+                        disabled={busy}
+                        onClick={() => {
+                          if (rejectionReason.trim() || confirm("Reject without reason?")) {
+                            approveReject(false);
+                          }
+                        }}
+                      >
+                        <XCircle className="mr-2 h-4 w-4" /> Reject
+                      </Button>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Rejection reason (optional)</Label>
+                      <Textarea
+                        rows={2}
+                        placeholder="e.g., Photos unclear, damage appears pre-existing..."
+                        value={rejectionReason}
+                        onChange={(e) => setRejectionReason(e.target.value)}
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
             )}
