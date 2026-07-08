@@ -27,6 +27,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/lib/supabase";
 import { getSignedUrl, getPublicUrl } from "@/lib/storage";
+import { ensureRepairRecord } from "@/lib/repairs";
 import { toast } from "sonner";
 import { TriangleAlert as AlertTriangle, CircleCheck as CheckCircle2, Circle as XCircle, Clock, Eye, SquareCheck as CheckSquare, MapPin, Car, User, Calendar, MessageSquare, Search, X, Trash2 } from "lucide-react";
 import { VehicleBlueprint, type BlueprintMarker, type BlueprintView } from "@/components/VehicleBlueprint";
@@ -122,10 +123,21 @@ export default function AdminDamages() {
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       const { error } = await supabase.from("damage_markers").update({ status }).eq("id", id);
       if (error) throw error;
+      if (status === "approved") {
+        const { data: marker } = await supabase
+          .from("damage_markers")
+          .select("id, vehicle_id")
+          .eq("id", id)
+          .single();
+        if (marker?.vehicle_id) {
+          await ensureRepairRecord(marker.id, marker.vehicle_id);
+        }
+      }
     },
     onSuccess: () => {
       toast.success("Status updated");
       qc.invalidateQueries({ queryKey: ["admin-damages"] });
+      qc.invalidateQueries({ queryKey: ["repairs-maintenance"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -137,11 +149,19 @@ export default function AdminDamages() {
         .update({ status: "approved", approved_at: new Date().toISOString() })
         .in("id", ids);
       if (error) throw error;
+      const { data: markers } = await supabase
+        .from("damage_markers")
+        .select("id, vehicle_id")
+        .in("id", ids);
+      for (const m of markers || []) {
+        await ensureRepairRecord(m.id, m.vehicle_id);
+      }
     },
     onSuccess: () => {
       toast.success("All selected approved");
       setSelectedIds(new Set());
       qc.invalidateQueries({ queryKey: ["admin-damages"] });
+      qc.invalidateQueries({ queryKey: ["repairs-maintenance"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -545,9 +565,13 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
         .from("damage_marker_photos")
         .update({ approved: true, approved_at: new Date().toISOString() })
         .eq("damage_marker_id", id!);
+      if (damage?.vehicle_id) {
+        await ensureRepairRecord(id!, damage.vehicle_id);
+      }
       toast.success("Marker approved — visible to drivers");
       qc.invalidateQueries({ queryKey: ["admin-damages"] });
       qc.invalidateQueries({ queryKey: ["damage-photos", id] });
+      qc.invalidateQueries({ queryKey: ["repairs-maintenance"] });
       onClose();
     } catch (e) {
       toast.error((e as Error).message);
@@ -586,9 +610,13 @@ function DamageDetailDrawer({ id, onClose }: { id: string | null; onClose: () =>
         : { status: "rejected", rejection_reason: rejectionReason || "Rejected by admin" };
       const { error } = await supabase.from("damage_markers").update(update).eq("id", id!);
       if (error) throw error;
+      if (approveFlag && damage?.vehicle_id) {
+        await ensureRepairRecord(id!, damage.vehicle_id);
+      }
       toast.success("Updated");
       qc.invalidateQueries({ queryKey: ["admin-damages"] });
       qc.invalidateQueries({ queryKey: ["damage-detail", id] });
+      qc.invalidateQueries({ queryKey: ["repairs-maintenance"] });
       onClose();
     } catch (e) {
       toast.error((e as Error).message);

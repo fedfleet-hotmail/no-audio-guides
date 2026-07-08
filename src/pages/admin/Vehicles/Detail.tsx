@@ -160,9 +160,9 @@ export default function AdminVehicleDetail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("vehicle_repairs")
-        .select("id, repair_date, description, cost, resolved, created_at")
+        .select("id, repair_date, description, cost, company, status, resolved, created_at, damage_marker_id")
         .eq("vehicle_id", vehicleId)
-        .order("repair_date", { ascending: false });
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return data || [];
     },
@@ -294,13 +294,14 @@ export default function AdminVehicleDetail() {
   const handleRepairToggle = async (repairId: string, resolved: boolean) => {
     const { error } = await supabase
       .from("vehicle_repairs")
-      .update({ resolved })
+      .update({ status: resolved ? "repaired" : "being_repaired" })
       .eq("id", repairId);
     if (error) {
       toast.error("Failed to update repair");
       return;
     }
     queryClient.invalidateQueries({ queryKey: ["vehicle-repairs", vehicleId] });
+    queryClient.invalidateQueries({ queryKey: ["repairs-maintenance"] });
   };
 
   const handleRepairDelete = async (repairId: string) => {
@@ -805,25 +806,33 @@ export default function AdminVehicleDetail() {
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
+                <TableHead>Company</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead>Cost</TableHead>
-                <TableHead>Resolved</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
               {(repairs as any[]).map((r) => (
-                <TableRow key={r.id} className={r.resolved ? "opacity-60" : ""}>
+                <TableRow key={r.id} className={r.status === "repaired" ? "opacity-60" : ""}>
                   <TableCell className="text-sm">{fmtDate(r.repair_date)}</TableCell>
-                  <TableCell className="max-w-xs text-sm">{r.description}</TableCell>
+                  <TableCell className="text-sm">{r.company || "—"}</TableCell>
+                  <TableCell className="max-w-xs text-sm">{r.description || "—"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {r.cost != null ? Number(r.cost).toFixed(2) : "—"}
                   </TableCell>
                   <TableCell>
-                    <Checkbox
-                      checked={r.resolved}
-                      onCheckedChange={(v) => handleRepairToggle(r.id, !!v)}
-                    />
+                    <Badge
+                      variant="outline"
+                      className={
+                        r.status === "being_repaired"
+                          ? "border-amber-500 text-amber-700"
+                          : "border-green-500 text-green-700"
+                      }
+                    >
+                      {r.status === "being_repaired" ? "Being Repaired" : "Repaired"}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
@@ -1047,13 +1056,14 @@ function AddRepairDialog({
     repair_date: today,
     description: "",
     cost: "",
+    company: "",
     resolved: false,
   });
   const [saving, setSaving] = useState(false);
 
   const handleOpenChange = (v: boolean) => {
     if (v) {
-      setForm({ repair_date: today, description: "", cost: "", resolved: false });
+      setForm({ repair_date: today, description: "", cost: "", company: "", resolved: false });
     }
     onOpenChange(v);
   };
@@ -1069,7 +1079,8 @@ function AddRepairDialog({
       repair_date: form.repair_date,
       description: form.description.trim(),
       cost: form.cost ? parseFloat(form.cost) : null,
-      resolved: form.resolved,
+      company: form.company.trim() || null,
+      status: form.resolved ? "repaired" : "being_repaired",
     });
     setSaving(false);
     if (error) {
@@ -1094,6 +1105,14 @@ function AddRepairDialog({
               type="date"
               value={form.repair_date}
               onChange={(e) => setForm((f) => ({ ...f, repair_date: e.target.value }))}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Company (optional)</Label>
+            <Input
+              value={form.company}
+              onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+              placeholder="Repair company name"
             />
           </div>
           <div className="space-y-1.5">
@@ -1123,7 +1142,7 @@ function AddRepairDialog({
               onCheckedChange={(v) => setForm((f) => ({ ...f, resolved: !!v }))}
             />
             <Label htmlFor="resolved" className="cursor-pointer font-normal">
-              Mark as resolved
+              Mark as repaired
             </Label>
           </div>
         </div>

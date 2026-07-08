@@ -24,6 +24,7 @@ const AdminInspections = lazy(() => import("@/pages/admin/Inspections"));
 const AdminDamages = lazy(() => import("@/pages/admin/Damages"));
 const AdminReports = lazy(() => import("@/pages/admin/Reports"));
 const AdminChecklists = lazy(() => import("@/pages/admin/Checklists"));
+const AdminRepairs = lazy(() => import("@/pages/admin/Repairs"));
 
 function PageLoader() {
   return (
@@ -62,6 +63,7 @@ export default function App() {
             <Route path="/admin/sessions/:sessionId" element={<AdminSessionReport />} />
             <Route path="/admin/inspections" element={<AdminInspections />} />
             <Route path="/admin/damages" element={<AdminDamages />} />
+            <Route path="/admin/repairs-maintenance" element={<AdminRepairs />} />
             <Route path="/admin/reports" element={<AdminReports />} />
           </Route>
         </Route>

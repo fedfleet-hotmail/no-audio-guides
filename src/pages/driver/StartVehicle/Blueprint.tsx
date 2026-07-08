@@ -62,7 +62,7 @@ export default function DriverStartBlueprint() {
   const { data, isLoading } = useQuery({
     queryKey: ["driver-vehicle-blueprint", vehicleId],
     queryFn: async () => {
-      const [v, m, p, links, bp, dp] = await Promise.all([
+      const [v, m, p, links, bp, dp, repairs] = await Promise.all([
         supabase
           .from("vehicles")
           .select("registration_number, make, model")
@@ -88,6 +88,10 @@ export default function DriverStartBlueprint() {
         supabase
           .from("damage_marker_photos")
           .select("id, damage_marker_id, photo_url"),
+        supabase
+          .from("vehicle_repairs")
+          .select("damage_marker_id, status")
+          .eq("vehicle_id", vehicleId),
       ]);
       if (v.error) throw v.error;
       if (m.error) throw m.error;
@@ -95,6 +99,7 @@ export default function DriverStartBlueprint() {
       if (links.error) throw links.error;
       if (bp.error) throw bp.error;
       if (dp.error) throw dp.error;
+      if (repairs.error) throw repairs.error;
       return {
         vehicle: v.data,
         markers: m.data as MarkerRow[],
@@ -102,6 +107,7 @@ export default function DriverStartBlueprint() {
         links: links.data,
         blueprints: bp.data as { view: BlueprintView | null; blueprint_image: string }[],
         damagePhotos: dp.data as { id: string; damage_marker_id: string; photo_url: string }[],
+        repairs: (repairs.data || []) as { damage_marker_id: string | null; status: string }[],
       };
     },
   });
@@ -111,18 +117,27 @@ export default function DriverStartBlueprint() {
     if (b.view) blueprintImages[b.view] = getPublicUrl(BLUEPRINT_BUCKET, b.blueprint_image);
   }
 
+  const repairedMarkerIds = new Set<string>();
+  for (const r of data?.repairs ?? []) {
+    if (r.status === "repaired" && r.damage_marker_id) {
+      repairedMarkerIds.add(r.damage_marker_id);
+    }
+  }
+
   const markers: BlueprintMarker[] =
-    data?.markers.map((m) => ({
-      id: m.id,
-      x: Number(m.x_coordinate),
-      y: Number(m.y_coordinate),
-      view: m.view,
-      source: m.source,
-      color:
-        m.source === "baseline"
-          ? "hsl(220 80% 55%)"
-          : "hsl(0 80% 50%)",
-    })) ?? [];
+    (data?.markers ?? [])
+      .filter((m) => m.source === "baseline" || !repairedMarkerIds.has(m.id))
+      .map((m) => ({
+        id: m.id,
+        x: Number(m.x_coordinate),
+        y: Number(m.y_coordinate),
+        view: m.view,
+        source: m.source,
+        color:
+          m.source === "baseline"
+            ? "hsl(220 80% 55%)"
+            : "hsl(0 80% 50%)",
+      })) ?? [];
 
   const linkedPhotosFor = (markerId: string) => {
     const ids = (data?.links ?? [])

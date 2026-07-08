@@ -146,7 +146,7 @@ export default function DriverReturnInspection() {
     queryKey: ["driver-return-blueprint", vehicleId],
     enabled: !!vehicleId,
     queryFn: async () => {
-      const [m, p, links, bp, dp] = await Promise.all([
+      const [m, p, links, bp, dp, repairs] = await Promise.all([
         supabase
           .from("damage_markers")
           .select("id, x_coordinate, y_coordinate, view, status, source, damage_type, description")
@@ -156,18 +156,24 @@ export default function DriverReturnInspection() {
         supabase.from("damage_marker_base_photos").select("damage_marker_id, base_photo_id"),
         supabase.from("vehicle_blueprints").select("view, blueprint_image").eq("vehicle_id", vehicleId),
         supabase.from("damage_marker_photos").select("id, damage_marker_id, photo_url"),
+        supabase
+          .from("vehicle_repairs")
+          .select("damage_marker_id, status")
+          .eq("vehicle_id", vehicleId),
       ]);
       if (m.error) throw m.error;
       if (p.error) throw p.error;
       if (links.error) throw links.error;
       if (bp.error) throw bp.error;
       if (dp.error) throw dp.error;
+      if (repairs.error) throw repairs.error;
       return {
         markers: m.data as MarkerRow[],
         basePhotos: p.data as { id: string; photo_url: string; view: BlueprintView | null; label: string | null }[],
         links: links.data as { damage_marker_id: string; base_photo_id: string }[],
         blueprints: bp.data as { view: BlueprintView | null; blueprint_image: string }[],
         damagePhotos: dp.data as { id: string; damage_marker_id: string; photo_url: string }[],
+        repairs: (repairs.data || []) as { damage_marker_id: string | null; status: string }[],
       };
     },
   });
@@ -177,15 +183,24 @@ export default function DriverReturnInspection() {
     if (b.view) blueprintImages[b.view] = getPublicUrl(BLUEPRINT_BUCKET, b.blueprint_image);
   }
 
+  const repairedMarkerIds = new Set<string>();
+  for (const r of vehicleData?.repairs ?? []) {
+    if (r.status === "repaired" && r.damage_marker_id) {
+      repairedMarkerIds.add(r.damage_marker_id);
+    }
+  }
+
   const existingMarkers: BlueprintMarker[] =
-    vehicleData?.markers.map((m) => ({
-      id: m.id,
-      x: Number(m.x_coordinate),
-      y: Number(m.y_coordinate),
-      view: m.view,
-      source: m.source,
-      color: m.source === "baseline" ? "hsl(220 80% 55%)" : "hsl(0 80% 50%)",
-    })) ?? [];
+    (vehicleData?.markers ?? [])
+      .filter((m) => m.source === "baseline" || !repairedMarkerIds.has(m.id))
+      .map((m) => ({
+        id: m.id,
+        x: Number(m.x_coordinate),
+        y: Number(m.y_coordinate),
+        view: m.view,
+        source: m.source,
+        color: m.source === "baseline" ? "hsl(220 80% 55%)" : "hsl(0 80% 50%)",
+      })) ?? [];
 
   const linkedPhotosFor = (markerId: string) => {
     const ids = (vehicleData?.links ?? []).filter((l) => l.damage_marker_id === markerId).map((l) => l.base_photo_id);

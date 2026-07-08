@@ -25,6 +25,7 @@ import {
 } from "@/components/VehicleBlueprint";
 import { supabase } from "@/lib/supabase";
 import { uploadPhoto, uploadPhotoAt, getPublicUrl, getSignedUrl } from "@/lib/storage";
+import { ensureRepairRecord } from "@/lib/repairs";
 import { toast } from "sonner";
 import { Camera, Loader as Loader2, Trash2, Upload, ClipboardList, Check } from "lucide-react";
 import { useEffect } from "react";
@@ -73,7 +74,7 @@ export default function AdminVehicleBlueprint() {
   const { data } = useQuery({
     queryKey: ["admin-vehicle-detail", vehicleId],
     queryFn: async () => {
-      const [v, m, p, links, bp, dp, drv] = await Promise.all([
+      const [v, m, p, links, bp, dp, drv, repairs] = await Promise.all([
         supabase
           .from("vehicles")
           .select("registration_number, make, model")
@@ -98,6 +99,10 @@ export default function AdminVehicleBlueprint() {
           .from("damage_marker_photos")
           .select("id, damage_marker_id, photo_url, approved, uploaded_at"),
         supabase.from("drivers").select("id, name, surname, employee_number"),
+        supabase
+          .from("vehicle_repairs")
+          .select("id, damage_marker_id, status")
+          .eq("vehicle_id", vehicleId),
       ]);
       if (v.error) throw v.error;
       if (m.error) throw m.error;
@@ -106,6 +111,7 @@ export default function AdminVehicleBlueprint() {
       if (bp.error) throw bp.error;
       if (dp.error) throw dp.error;
       if (drv.error) throw drv.error;
+      if (repairs.error) throw repairs.error;
       return {
         vehicle: v.data,
         markers: m.data as MarkerRow[],
@@ -114,6 +120,7 @@ export default function AdminVehicleBlueprint() {
         blueprints: bp.data as { id: string; view: BlueprintView | null; blueprint_image: string }[],
         damagePhotos: dp.data as DamagePhoto[],
         drivers: drv.data as { id: string; name: string; surname: string; employee_number: string }[],
+        repairs: (repairs.data || []) as { id: string; damage_marker_id: string | null; status: string }[],
       };
     },
   });
@@ -123,22 +130,34 @@ export default function AdminVehicleBlueprint() {
     if (b?.view) blueprintImages[b.view] = getPublicUrl(BLUEPRINT_BUCKET, b.blueprint_image);
   }
 
+  const repairByMarker = new Map<string, string>();
+  for (const r of data?.repairs ?? []) {
+    if (r.damage_marker_id) repairByMarker.set(r.damage_marker_id, r.status);
+  }
+
   const markers: BlueprintMarker[] =
-    (data?.markers ?? []).map((m) => ({
-      id: m.id,
-      x: Number(m.x_coordinate),
-      y: Number(m.y_coordinate),
-      view: m.view,
-      source: m.source,
-      color:
-        m.source === "baseline"
-          ? "hsl(220 80% 55%)"
-          : m.status === "approved"
-            ? "hsl(142 71% 45%)"
-            : m.status === "rejected"
-              ? "hsl(0 30% 50%)"
-              : "hsl(45 90% 50%)",
-    })) ?? [];
+    (data?.markers ?? []).map((m) => {
+      let color: string;
+      if (m.source === "baseline") {
+        color = "hsl(220 80% 55%)";
+      } else if (m.status === "rejected") {
+        color = "hsl(0 30% 50%)";
+      } else if (m.status === "pending_approval") {
+        color = "hsl(45 90% 50%)";
+      } else {
+        // approved — check repair status
+        const repairStatus = repairByMarker.get(m.id);
+        color = repairStatus === "repaired" ? "hsl(142 71% 45%)" : "hsl(0 80% 50%)";
+      }
+      return {
+        id: m.id,
+        x: Number(m.x_coordinate),
+        y: Number(m.y_coordinate),
+        view: m.view,
+        source: m.source,
+        color,
+      };
+    }) ?? [];
 
   /* -------- base photo upload -------- */
   const uploadBase = useMutation({
@@ -266,7 +285,8 @@ export default function AdminVehicleBlueprint() {
             <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
               <Legend color="hsl(220 80% 55%)" label="Baseline (B)" />
               <Legend color="hsl(45 90% 50%)" label="Pending Approval" />
-              <Legend color="hsl(142 71% 45%)" label="Approved" />
+              <Legend color="hsl(0 80% 50%)" label="Approved — Being Repaired" />
+              <Legend color="hsl(142 71% 45%)" label="Repaired" />
               <Legend color="hsl(0 30% 50%)" label="Rejected" />
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
@@ -393,6 +413,7 @@ export default function AdminVehicleBlueprint() {
       {/* ---------- EXISTING MARKER SHEET ---------- */}
       <ExistingMarkerSheet
         marker={openMarker}
+        vehicleId={vehicleId!}
         basePhotos={data?.basePhotos ?? []}
         links={data?.links ?? []}
         damagePhotos={(data?.damagePhotos ?? []).filter(
@@ -649,6 +670,7 @@ function NewBaselineMarkerSheet({
 ============================================================ */
 function ExistingMarkerSheet({
   marker,
+  vehicleId,
   basePhotos,
   links,
   damagePhotos,
@@ -658,6 +680,7 @@ function ExistingMarkerSheet({
   onDelete,
 }: {
   marker: MarkerRow | null;
+  vehicleId: string;
   basePhotos: BasePhoto[];
   links: { damage_marker_id: string; base_photo_id: string }[];
   damagePhotos: DamagePhoto[];
@@ -703,6 +726,13 @@ function ExistingMarkerSheet({
 
   async function setStatus(s: string) {
     await supabase.from("damage_markers").update({ status: s }).eq("id", marker!.id);
+    if (s === "approved") {
+      try {
+        await ensureRepairRecord(marker!.id, vehicleId);
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    }
     onChanged();
   }
 
@@ -719,6 +749,7 @@ function ExistingMarkerSheet({
         .from("damage_marker_photos")
         .update({ approved: true, approved_at: new Date().toISOString() })
         .eq("damage_marker_id", marker!.id);
+      await ensureRepairRecord(marker!.id, vehicleId);
       toast.success("Marker approved — visible to drivers");
       onChanged();
     } catch (e) {

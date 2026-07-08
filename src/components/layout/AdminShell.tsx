@@ -13,6 +13,7 @@ import {
   ClipboardList,
   Menu,
   X,
+  Wrench,
 } from "lucide-react";
 import { adminLogout } from "@/lib/auth/adminAuth";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ const nav = [
   { to: "/admin/sessions", label: "Sessions", icon: Clock },
   { to: "/admin/inspections", label: "Inspections", icon: ClipboardCheck },
   { to: "/admin/damages", label: "Damages", icon: AlertTriangle },
+  { to: "/admin/repairs-maintenance", label: "Repairs & Maintenance", icon: Wrench },
   { to: "/admin/reports", label: "Reports", icon: FileBarChart },
 ];
 
