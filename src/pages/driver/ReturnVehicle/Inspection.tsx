@@ -249,7 +249,7 @@ export default function DriverReturnInspection() {
             reported_during: "return",
             damage_type: m.damage_type,
             description: m.description || null,
-            status: "open",
+            status: "pending_approval",
             source: "driver",
             x_coordinate: m.x,
             y_coordinate: m.y,

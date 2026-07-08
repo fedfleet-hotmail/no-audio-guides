@@ -396,7 +396,7 @@ function ReportDamageSheet({
           reported_during: "pre_trip",
           damage_type: damageType,
           description: description || null,
-          status: "open",
+          status: "pending_approval",
           source: "driver",
           x_coordinate: coord.x,
           y_coordinate: coord.y,
